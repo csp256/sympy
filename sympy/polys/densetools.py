@@ -1280,6 +1280,26 @@ def dmp_lift(f: dmp[Alg], u: int, K: AlgebraicField) -> dmp[MPQ]:
     return dmp_resultant(F, P_A, v, K2) # type: ignore
 
 
+def _check_sign_variations_domain(K):
+    """Raise DomainError if sign variation counting is unsupported over K."""
+    # XXX: There should be a way to check for real numeric domains and
+    # Domain.is_negative should be fixed to handle all real numeric domains.
+    # Sign variation counting should not need its own special cases for
+    # determining which domains support sign comparisons.
+    if K.is_ZZ or K.is_QQ or K.is_RR:
+        return
+    elif K.is_AlgebraicField and K.ext.is_comparable:
+        return
+    elif ((K.is_PolynomialRing or K.is_FractionField) and len(K.symbols) == 1 and
+          (K.dom.is_ZZ or K.dom.is_QQ or K.is_AlgebraicField) and
+          K.symbols[0].is_transcendental and K.symbols[0].is_comparable):
+        # We can handle a polynomial ring like QQ[E] if there is a single
+        # transcendental generator because then zero equivalence is assured.
+        return
+    else:
+        raise DomainError("sign variation counting not supported over %s" % K)
+
+
 def dup_sign_variations(f, K):
     """
     Compute the number of sign variations of ``f`` in ``K[x]``.
@@ -1294,6 +1314,8 @@ def dup_sign_variations(f, K):
     2
 
     """
+    _check_sign_variations_domain(K)
+
     def is_negative_sympy(a):
         if not a:
             # XXX: requires zero equivalence testing in the domain
@@ -1306,22 +1328,10 @@ def dup_sign_variations(f, K):
             # elements though.
             return bool(K.to_sympy(a) < 0)
 
-    # XXX: There should be a way to check for real numeric domains and
-    # Domain.is_negative should be fixed to handle all real numeric domains.
-    # It should not be necessary to special case all these different domains
-    # in this otherwise generic function.
     if K.is_ZZ or K.is_QQ or K.is_RR:
         is_negative = K.is_negative
-    elif K.is_AlgebraicField and K.ext.is_comparable:
-        is_negative = is_negative_sympy
-    elif ((K.is_PolynomialRing or K.is_FractionField) and len(K.symbols) == 1 and
-          (K.dom.is_ZZ or K.dom.is_QQ or K.is_AlgebraicField) and
-          K.symbols[0].is_transcendental and K.symbols[0].is_comparable):
-        # We can handle a polynomial ring like QQ[E] if there is a single
-        # transcendental generator because then zero equivalence is assured.
-        is_negative = is_negative_sympy
     else:
-        raise DomainError("sign variation counting not supported over %s" % K)
+        is_negative = is_negative_sympy
 
     prev, k = K.zero, 0
 
