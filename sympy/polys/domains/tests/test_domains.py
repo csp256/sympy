@@ -774,6 +774,15 @@ def test_PolynomialRing__init():
     assert ZZ.poly_ring() == R.to_domain()
 
 
+
+def test_PolynomialRing_factorial():
+    for K in [ZZ[x], ZZ[x, y], ZZ[x][y]]:
+        for n, expected in [(0, 1), (1, 1), (3, 6), (5, 120)]:
+            result = K.factorial(n)
+            assert result == K.convert(expected)
+            assert K.of_type(result)
+
+
 def test_FractionField__init():
     F, = field("", ZZ)
     assert ZZ.frac_field() == F.to_domain()
