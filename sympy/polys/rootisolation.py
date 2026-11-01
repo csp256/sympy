@@ -16,7 +16,7 @@ from sympy.polys.densetools import (
     dup_transform,
     dup_diff,
     dup_eval, dmp_eval_in,
-    dup_sign_variations,
+    dup_sign_variations, _check_sign_variations_domain,
     dup_real_imag)
 from sympy.polys.euclidtools import (
     dup_discriminant)
@@ -778,6 +778,8 @@ def dup_count_real_roots(f, K, inf=None, sup=None):
     if not K.is_Field:
         R, K = K, K.get_field()
         f = dup_convert(f, R, K)
+
+    _check_sign_variations_domain(K)
 
     sturm = dup_sturm(f, K)
 

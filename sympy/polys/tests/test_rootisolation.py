@@ -1,11 +1,18 @@
 """Tests for real and complex root isolation and refinement algorithms. """
 from __future__ import annotations
 
+from unittest.mock import patch
+
+from sympy.core.numbers import E
+from sympy.core.symbol import Symbol
+from sympy.functions.elementary.miscellaneous import sqrt
+
 from sympy.polys.rings import ring
-from sympy.polys.domains import ZZ, QQ, ZZ_I, EX
+from sympy.polys.domains import ZZ, QQ, RR, ZZ_I, EX
 from sympy.polys.polyerrors import DomainError, RefinementFailed, PolynomialError
+from sympy.polys.polytools import PurePoly
 from sympy.polys.rootisolation import (
-    dup_cauchy_upper_bound, dup_cauchy_lower_bound,
+    dup_cauchy_upper_bound, dup_cauchy_lower_bound, dup_count_real_roots,
     dup_mignotte_sep_bound_squared,
 )
 from sympy.testing.pytest import raises
@@ -466,6 +473,23 @@ def test_dup_count_real_roots():
     assert R.dup_count_real_roots(f) == 2
     assert R.dup_count_real_roots(f, sup=0) == 1
     assert R.dup_count_real_roots(f, inf=-1, sup=1) == 0
+
+
+def test_dup_count_real_roots_unsupported_domain():
+    with patch('sympy.polys.rootisolation.dup_sturm',
+               side_effect=AssertionError("Sturm sequence should not be computed")):
+        for K in [EX, ZZ_I]:
+            assert dup_count_real_roots([], K) == 0
+            assert dup_count_real_roots([K.one], K) == 0
+            raises(DomainError, lambda: dup_count_real_roots([K.one, K.one], K))
+
+
+def test_dup_count_real_roots_supported_domains():
+    minpoly = PurePoly([1, 0, -2], Symbol('t'), domain=QQ)
+    algebraic = QQ.algebraic_field((minpoly, sqrt(2)))
+    for K in [RR, algebraic, QQ.poly_ring(E), QQ.frac_field(E)]:
+        f = [K.one, -K.one]
+        assert dup_count_real_roots(f, K, inf=K.zero, sup=K.one) == 1
 
 
 # parameters for test_dup_count_complex_roots_n(): n = 1..8

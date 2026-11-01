@@ -713,6 +713,13 @@ def test_dup_sign_variations():
     assert dup_sign_variations([-1, 0, -4, 0, 5], ZZ) == 1
     assert dup_sign_variations([ 1, 0, 4, 0, 5], ZZ) == 0
 
+    for K in [EX, QQ_I, QQ.poly_ring(x)]:
+        raises(DomainError, lambda: dup_sign_variations([], K))
+        raises(DomainError, lambda: dup_sign_variations([K.one, -K.one], K))
+
+    for K in [ZZ, QQ, RR]:
+        assert dup_sign_variations([K.one, K.zero, -K.one], K) == 1
+
 
 def test_dup_clear_denoms():
     assert dup_clear_denoms([], QQ, ZZ) == (ZZ(1), [])
