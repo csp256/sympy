@@ -496,12 +496,15 @@ class _MDPSolver:
             uc = _sp_eval_x0(ctx, c, None, 1)
             sol = _uni_solve(self.uF, self.uW, uc, ctx.P, ctx.K)
             return [_sp_from_dup(s) for s in sol]
-        for form in forms or ():
+        for form in (forms or ())[:1 if self.m == 2 else None]:
             try:
                 return self.sparse_interpolate(c, form)
             except _FormFailure:
                 pass
-        for _ in range(_RETRIES):
+        # In two variables Wang's solver is not exponential (it solves one
+        # univariate problem per power of x_1 - a_1) and is cheaper than
+        # MDSolver.
+        for _ in range(_RETRIES if self.m > 2 else 0):
             try:
                 return self.mdsolver(c)
             except (_Unlucky, _FormFailure):
@@ -936,7 +939,9 @@ def _lift_step(ctx, a, H, L, hdeg, j, A):
             for l in range(1, r):
                 pre[l][k] = _prefix_coeff(ctx, pre, Hc, l, k)
 
-    if not _random_check(ctx, At, Hc, j):
+    # Fail early if the factors do not lift; after the last step the exact
+    # check in the caller is enough.
+    if j < ctx.nvars - 1 and not _random_check(ctx, At, Hc, j):
         raise _NoSolution
 
     return [_sp_untaylor(ctx, T, j, alpha) for T in Hc]
