@@ -164,3 +164,22 @@ a theoretical foundation for implementing polynomials manipulation module.
 .. [Zippel79] R. Zippel, Probabilistic Algorithms for Sparse Polynomials,
     Springer, 1979, pp. 216--226.
     https://www.cecm.sfu.ca/~monaganm/teaching/TopicsinCA15/zippel79.pdf
+
+.. [MonaganTuncer16] M. Monagan, B. Tuncer, Using Sparse Interpolation in
+    Hensel Lifting, Proceedings of CASC 2016, LNCS 9890, pp. 381--400,
+    Springer, 2016. http://www.cecm.sfu.ca/~mmonagan/papers/BarisCASC2016.pdf
+
+.. [MonaganTuncer18] M. Monagan, B. Tuncer, Factoring Multivariate
+    Polynomials with Many Factors and Huge Coefficients, Proceedings of
+    CASC 2018, LNCS 11077, pp. 319--334, Springer, 2018.
+
+.. [MonaganTuncer20] M. Monagan, B. Tuncer, The complexity of sparse Hensel
+    lifting and sparse polynomial factorization, Journal of Symbolic
+    Computation 99 (2020), pp. 189--230.
+    https://doi.org/10.1016/j.jsc.2019.05.001
+
+.. [Zippel90] R. Zippel, Interpolating Polynomials from their Values,
+    Journal of Symbolic Computation 9 (1990), pp. 375--403.
+
+.. [Kaltofen85] E. Kaltofen, Sparse Hensel Lifting, Proceedings of
+    EUROCAL '85, LNCS 204, pp. 4--17, Springer, 1985.

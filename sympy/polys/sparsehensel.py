@@ -13,18 +13,22 @@ The functions here keep the outer structure of Wang's lifting (the same
 evaluation point, the same leading coefficient correction and the same
 Taylor expansion) and solve the MDPs by sparse interpolation instead:
 
-* The solution `\\sigma_k` of the `k`-th MDP of a step is interpolated with
-  the support of `\\sigma_{k-1}` as its form. This is the *strong SHL
-  assumption* of Monagan and Tuncer, Algorithm 5 (MTSHL) of [MT20]_, which
-  holds with high probability when `\\alpha_j` is random (Lemma 1 of
-  [MT20]_). The coefficients of the form are found from univariate images
-  by solving transposed Vandermonde systems (Zippel, [Zippel90]_).
-* If that fails, the support of `\\sigma_0` (Kaltofen's *weak SHL
-  assumption*, [Kaltofen85]_, Section 3.1 of [MT20]_) is tried, and then
+* The solution `\\sigma_k` of the `k`-th MDP of a step is interpolated
+  with the support of `\\sigma_{k-1}` as its form. This is the *strong SHL
+  assumption* of Algorithm 5 (MTSHL) of [MonaganTuncer20]_, which holds
+  with high probability when `\\alpha_j` is random (Lemma 1 there). The
+  coefficients of the form are found from univariate images at powers of a
+  random point by solving transposed Vandermonde systems ([Zippel90]_;
+  Algorithm 4, SparseInterpolate, of [MonaganTuncer20]_). Monagan and
+  Tuncer use bivariate images and a dense bivariate solver to need fewer
+  images; univariate images keep the code simple.
+* If that fails, the support of `\\sigma_0` (the *weak SHL assumption* of
+  [Kaltofen85]_, Section 3.1 of [MonaganTuncer20]_) is tried, and then
   Zippel's sparse interpolation with a form taken from one random image
-  (Algorithm 3, MDSolver, of [MT20]_), which assumes nothing about
-  `\\alpha_j`. All factors are interpolated together, as suggested in
-  Section 9 of [MT20]_ and in [MT18]_.
+  (Algorithm 3, MDSolver, of [MonaganTuncer20]_), which assumes nothing
+  about `\\alpha_j`; this is the usual case when `\\alpha_j = 0`. All
+  factors are interpolated together, as suggested in Section 9 of
+  [MonaganTuncer20]_ and in [MonaganTuncer18]_.
 * Only if the random choices keep being unlucky is Wang's dense solver
   :func:`~.dmp_zz_diophantine` used for that MDP.
 
@@ -41,18 +45,8 @@ multiplication is integer addition) to coefficients in `[0, P)`.
 References
 ==========
 
-.. [MT20] M. Monagan, B. Tuncer, The complexity of sparse Hensel lifting
-   and sparse polynomial factorization, J. Symbolic Comput. 99 (2020)
-   189-230. https://doi.org/10.1016/j.jsc.2019.05.001
-.. [MT16] M. Monagan, B. Tuncer, Using sparse interpolation in Hensel
-   lifting, Proc. CASC 2016, LNCS 9890, 381-400.
-.. [MT18] M. Monagan, B. Tuncer, Factoring multivariate polynomials with
-   many factors and huge coefficients, Proc. CASC 2018, LNCS 11077,
-   319-334.
-.. [Zippel90] R. Zippel, Interpolating polynomials from their values,
-   J. Symbolic Comput. 9(3) (1990) 375-403.
-.. [Kaltofen85] E. Kaltofen, Sparse Hensel lifting, Proc. EUROCAL '85,
-   LNCS 204, 4-17.
+[MonaganTuncer20]_, [MonaganTuncer16]_, [MonaganTuncer18]_, [Zippel90]_,
+[Kaltofen85]_ (see the bibliography of the polys module).
 
 """
 
@@ -69,7 +63,7 @@ from sympy.polys.polyerrors import ExtraneousFactors
 # A prime used for lifting when the prime chosen by Wang's algorithm is
 # small. Sparse interpolation needs a large prime: the probability that
 # random evaluations are unlucky is proportional to 1/P (Proposition 3 of
-# [MT20]).
+# [MonaganTuncer20]).
 _MERSENNE_61 = 2**61 - 1
 
 # How many times a solver redraws its random evaluation points before it
@@ -404,7 +398,7 @@ def _uni_solve(F, W, c, P, K):
 def _vandermonde(ms, vs, P, K):
     """Solve the transposed Vandermonde system
     `\\sum_l c_l m_l^n = v_n` for `n = 1, \\dots, t` in `O(t^2)`
-    (Zippel, [Zippel90]_; Step 15 of Algorithm 4 of [MT20]_)."""
+    (Zippel, [Zippel90]_; Step 15 of Algorithm 4 of [MonaganTuncer20]_)."""
     t = len(ms)
     # master polynomial prod(z - m_l), low degree first
     M = [K.one]
@@ -471,11 +465,16 @@ class _MDPSolver:
     def _checker(self):
         """A random point (cached) at which candidate solutions are
         checked."""
-        if self._check is None:
-            ctx = self.ctx
+        ctx = self.ctx
+        for _ in range(_RETRIES):
+            if self._check is not None:
+                return self._check
             point = [ctx.nonzero() for _ in range(self.m)]
-            self._check = self._univariate_images(point)
-        return self._check
+            try:
+                self._check = self._univariate_images(point)
+            except _Unlucky:
+                pass
+        raise _Unlucky
 
     def verify(self, c, sigma):
         """Check a candidate solution at a random point."""
@@ -507,11 +506,15 @@ class _MDPSolver:
                 return self.mdsolver(c)
             except (_Unlucky, _FormFailure):
                 self._subsolvers = None
-        return self.dense(c)
+        sigma = self.dense(c)
+        if not self.verify(c, sigma):
+            # Wang's solver is exact when a polynomial solution exists
+            raise _NoSolution
+        return sigma
 
     def sparse_interpolate(self, c, form):
         """Interpolate the solutions assuming their supports are contained
-        in those of ``form`` (Algorithm 4, SparseInterpolate, of [MT20]_,
+        in those of ``form`` (Algorithm 4, SparseInterpolate, of [MonaganTuncer20]_,
         with univariate images and all factors at once)."""
         for _ in range(_RETRIES):
             try:
@@ -526,7 +529,7 @@ class _MDPSolver:
 
     def _image(self, n):
         """The ``n``-th univariate images (``n >= 1``) of ``F`` at the
-        powers of the cached random point (Section 2.4 of [MT20]_)."""
+        powers of the cached random point (Section 2.4 of [MonaganTuncer20]_)."""
         ctx = self.ctx
         P, K = ctx.P, ctx.K
         if self._images is None:
@@ -602,7 +605,7 @@ class _MDPSolver:
 
     def mdsolver(self, c):
         """Zippel's sparse interpolation of the solutions with a form taken
-        from one random image (Algorithm 3, MDSolver, of [MT20]_). The last
+        from one random image (Algorithm 3, MDSolver, of [MonaganTuncer20]_). The last
         variable is interpolated densely, the others recursively."""
         ctx = self.ctx
         P, K = ctx.P, ctx.K
@@ -685,7 +688,7 @@ class _MDPSolver:
         return self.sparse_interpolate(c, form)
 
     def dense(self, c):
-        """Wang's dense ideal-adic solver (Algorithm 2 of [MT20]_)."""
+        """Wang's dense ideal-adic solver (Algorithm 2 of [MonaganTuncer20]_)."""
         from sympy.polys.factortools import dmp_zz_diophantine
         ctx = self.ctx
         P, K = ctx.P, ctx.K
@@ -712,7 +715,7 @@ def _powered(tables, k, P):
 
 def _images_of(ctx, f, tables, s, m):
     """Univariate images of ``f`` at the powers ``1..s`` of the point of
-    ``tables``, updating one coefficient array (Section 2.4 of [MT20]_)."""
+    ``tables``, updating one coefficient array (Section 2.4 of [MonaganTuncer20]_)."""
     P, K, mask = ctx.P, ctx.K, ctx.mask
     es, cs, ths = [], [], []
     for mono, c in f.items():
@@ -795,7 +798,7 @@ def dmp_zz_sparse_hensel_lifting(f, H, LC, A, p, u, K, seed=None):
     true factors (polynomials in `x_1, \dots, x_u`) and a prime ``p``.
 
     The Taylor coefficients of the factors in each step are found by sparse
-    interpolation (Monagan and Tuncer, [MT20]_), which takes time
+    interpolation (Monagan and Tuncer, [MonaganTuncer20]_), which takes time
     polynomial in the number of terms of the factors instead of Wang's
     time, exponential in the number of variables.
 
@@ -819,8 +822,8 @@ def dmp_zz_sparse_hensel_lifting(f, H, LC, A, p, u, K, seed=None):
     References
     ==========
 
-    .. [1] [MT20]_
-    .. [2] [MT16]_
+    .. [1] [MonaganTuncer20]_
+    .. [2] [MonaganTuncer16]_
 
     """
     rng = Random(seed if isinstance(seed, int) else 0)
@@ -885,7 +888,7 @@ def dmp_zz_sparse_hensel_lifting(f, H, LC, A, p, u, K, seed=None):
 
 
 def _lift_step(ctx, a, H, L, hdeg, j, A):
-    """The `j`-th step of MTSHL (Algorithm 5 of [MT20]_): lift the factors
+    """The `j`-th step of MTSHL (Algorithm 5 of [MonaganTuncer20]_): lift the factors
     ``H`` of ``a`` at `x_j = \\alpha_j` to factors of ``a``, given the true
     leading coefficients ``L``."""
     P = ctx.P
