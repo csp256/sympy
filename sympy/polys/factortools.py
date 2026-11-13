@@ -74,6 +74,7 @@ from sympy.polys.sqfreetools import (
     )
 
 from sympy.polys.polyutils import _sort_factors
+from sympy.polys.sparsehensel import dmp_zz_sparse_hensel_lifting
 from sympy.polys.polyconfig import query
 
 from sympy.polys.polyerrors import (
@@ -1118,7 +1119,13 @@ def dmp_zz_wang(f, u, K, mod=None, seed=None):
 
     try:
         f, H, LC = dmp_zz_wang_lead_coeffs(f, T, cs, E, H, A, u, K)
-        factors = dmp_zz_wang_hensel_lifting(f, H, LC, A, p, u, K)
+        # With two variables Wang's lifting solves only univariate
+        # diophantine equations, so sparse lifting has nothing to gain.
+        if u > 1 and query('EEZ_HENSEL_LIFTING') == 'sparse':
+            factors = dmp_zz_sparse_hensel_lifting(f, H, LC, A, p, u, K,
+                seed=seed if isinstance(seed, int) else None)
+        else:
+            factors = dmp_zz_wang_hensel_lifting(f, H, LC, A, p, u, K)
     except ExtraneousFactors:  # pragma: no cover
         if query('EEZ_RESTART_IF_NEEDED'):
             return dmp_zz_wang(orig_f, u, K, mod + 1)
