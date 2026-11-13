@@ -160,6 +160,21 @@ def test_dmp_zz_wang_kerr():
     for seed in [13, 16]:
         assert dmp_zz_wang(f, 6, ZZ, seed=seed) == [f]
 
+    # What trigsimp factors for another Kerr component; Wang's lifting did
+    # not finish within minutes for seeds 5 and 7.
+    R, x0, x1, x2, x3, x4 = ring("x0:5", ZZ)
+    p = (9*x0**8 - 6*x0**7*x2 - 15*x0**6*x1**2*x4**2 + 24*x0**6*x1**2
+         + 10*x0**5*x1**2*x2*x4**2 - 10*x0**5*x1**2*x2 + 7*x0**4*x1**4*x3**4
+         - 4*x0**4*x1**4*x4**4 - 7*x0**4*x1**4*x4**2 + 11*x0**4*x1**4
+         - 2*x0**3*x1**4*x2*x3**4 + 5*x0**2*x1**6*x3**4*x4**2
+         + 2*x0**2*x1**6*x3**4 - 2*x0**2*x1**6*x4**6 + 2*x0**2*x1**6*x4**4
+         + 2*x0**2*x1**6*x4**2 - 2*x0**2*x1**6 + 2*x0*x1**6*x2*x3**6
+         + 5*x1**8*x3**4*x4**2 - 5*x1**8*x3**4 - 2*x1**8*x4**6
+         + 6*x1**8*x4**4 - 6*x1**8*x4**2 + 2*x1**8)
+    f = R.to_dense(p)
+    for seed in range(20):
+        assert dmp_zz_wang(f, 4, ZZ, seed=seed) == [f]
+
 
 def _random_sparse(R, rnd, nterms, deg):
     f = R.zero
