@@ -335,6 +335,25 @@ def test_issue_6355():
     assert R.dmp_zz_wang(f, seed=random_sequence) == [f]
 
 
+
+def test_dmp_zz_wang_spurious_image_factors():
+    # An irreducible polynomial whose univariate images split for some
+    # evaluation points. With seeds 5 and 7 those points used to be lifted
+    # by a dense multivariate Hensel lift that ran for minutes; trying more
+    # cheap evaluation points before lifting avoids it.
+    R, x0, x1, x2, x3, x4 = ring("x0,x1,x2,x3,x4", ZZ)
+    f = (9*x0**8 - 6*x0**7*x2 - 15*x0**6*x1**2*x4**2 + 24*x0**6*x1**2
+         + 10*x0**5*x1**2*x2*x4**2 - 10*x0**5*x1**2*x2 + 7*x0**4*x1**4*x3**4
+         - 4*x0**4*x1**4*x4**4 - 7*x0**4*x1**4*x4**2 + 11*x0**4*x1**4
+         - 2*x0**3*x1**4*x2*x3**4 + 5*x0**2*x1**6*x3**4*x4**2
+         + 2*x0**2*x1**6*x3**4 - 2*x0**2*x1**6*x4**6 + 2*x0**2*x1**6*x4**4
+         + 2*x0**2*x1**6*x4**2 - 2*x0**2*x1**6 + 2*x0*x1**6*x2*x3**6
+         + 5*x1**8*x3**4*x4**2 - 5*x1**8*x3**4 - 2*x1**8*x4**6
+         + 6*x1**8*x4**4 - 6*x1**8*x4**2 + 2*x1**8)
+
+    for seed in [5, 7]:
+        assert R.dmp_zz_wang(f, seed=seed) == [f]
+
 def test_dmp_zz_factor():
     R, x = ring("x", ZZ)
     assert R.dmp_zz_factor(0) == (0, [])

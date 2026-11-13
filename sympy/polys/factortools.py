@@ -1022,6 +1022,15 @@ def dmp_zz_wang(f, u, K, mod=None, seed=None):
     The parameter ``seed`` is passed to _randint and can be used to seed randint
     (when an integer) or (for testing purposes) can be a sequence of numbers.
 
+    Before lifting, up to ``min(EEZ_NUMBER_OF_CONFIGS + u, 32)`` evaluation
+    points are tried, keeping those whose univariate image has the fewest
+    factors. Each try costs one evaluation and one univariate factorization,
+    whereas lifting an image with spurious factors costs a dense multivariate
+    Hensel lift (which can take hours for an irreducible polynomial in many
+    variables). The factors are canonical, so the result does not depend on
+    the points. A sequence ``seed`` keeps the original schedule (no extra
+    points), so that it reproduces a given run exactly.
+
     References
     ==========
 
@@ -1034,9 +1043,6 @@ def dmp_zz_wang(f, u, K, mod=None, seed=None):
     randint = _randint(seed)
 
     ct, T = dmp_zz_factor(dmp_LC(f, K), u - 1, K)
-
-    b = dmp_zz_mignotte_bound(f, u, K)
-    p = K(nextprime(b))
 
     if mod is None:
         if u == 1:
@@ -1064,7 +1070,16 @@ def dmp_zz_wang(f, u, K, mod=None, seed=None):
     eez_num_tries = query('EEZ_NUMBER_OF_TRIES')
     eez_mod_step = query('EEZ_MODULUS_STEP')
 
-    while len(configs) < eez_num_configs:
+    # Specializations to try before lifting (see above), and those tried so
+    # far, counting the one at the origin. A sequence ``seed`` dictates the
+    # points exactly, so it keeps the original schedule.
+    if seed is None or isinstance(seed, int):
+        min_probes = min(eez_num_configs + u, 32)
+    else:
+        min_probes = 0
+    probes = int(r is not None)
+
+    while len(configs) < eez_num_configs or probes < min_probes:
         for _ in range(eez_num_tries):
             A = [ K(randint(-mod, mod)) for _ in range(u) ]
 
@@ -1077,6 +1092,8 @@ def dmp_zz_wang(f, u, K, mod=None, seed=None):
                 cs, s, E = dmp_zz_wang_test_points(f, T, ct, A, u, K)
             except EvaluationFailed:
                 continue
+
+            probes += 1
 
             _, H = dup_zz_factor_sqf(s, K)
 
@@ -1094,9 +1111,10 @@ def dmp_zz_wang(f, u, K, mod=None, seed=None):
             if r == 1:
                 return [f]
 
-            configs.append((s, cs, E, H, A))
+            if len(configs) < eez_num_configs:
+                configs.append((s, cs, E, H, A))
 
-            if len(configs) == eez_num_configs:
+            if len(configs) == eez_num_configs and probes >= min_probes:
                 break
         else:
             mod += eez_mod_step
@@ -1115,6 +1133,9 @@ def dmp_zz_wang(f, u, K, mod=None, seed=None):
 
     _, cs, E, H, A = configs[s_arg]
     orig_f = f
+
+    b = dmp_zz_mignotte_bound(f, u, K)
+    p = K(nextprime(b))
 
     try:
         f, H, LC = dmp_zz_wang_lead_coeffs(f, T, cs, E, H, A, u, K)
