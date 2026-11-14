@@ -1690,6 +1690,7 @@ def discrete_log(n, a, b, order=None, prime_order=None):
     if n == 1:
         return 0
 
+    order_factors = None
     if order is None:
         # Compute the order and its factoring in one pass
         # order = totient(n), factors = factorint(order)
