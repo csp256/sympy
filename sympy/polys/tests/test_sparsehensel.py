@@ -99,8 +99,8 @@ def test_dmp_zz_sparse_hensel_lifting_zero_point():
 
 
 def test_dmp_zz_sparse_hensel_lifting_extraneous():
-    # Upstream issue 20456: an irreducible polynomial whose univariate image
-    # at A splits. Wang's lifting took seconds to fail (about 40 seconds for
+    # An irreducible polynomial in 7 variables whose univariate image at A
+    # splits. Wang's lifting took seconds to fail (about 40 seconds for
     # the evaluation points of the original report); sparse lifting finds
     # quickly that the diophantine equations have no polynomial solution.
     R, x0, x1, x2, x3, x4, x5, x6 = ring("x0:7", ZZ)
@@ -142,7 +142,7 @@ def _kerr_polynomial(R):
         - 32*x1**8*x4**5*x6 + x1**8*x5)
 
 
-def test_dmp_zz_wang_issue_20456():
+def test_dmp_zz_wang_spurious_seeds():
     R, x0, x1, x2, x3, x4, x5, x6 = ring("x0:7", ZZ)
     g = x2 + x0*x1*x3 + x0**2*x1**2*x4 + x0**3*x1**3*x5 + x0**4*x1**4*x6
     f = R.to_dense(g)
@@ -214,7 +214,7 @@ def _drop(R, f, j):
 
 def test_sparse_hensel_random_products():
     # Products of random sparse irreducible factors in 3 to 8 variables.
-    rnd = Random(20456)
+    rnd = Random(2025)
     for nvars in range(3, 9):
         R = ring(",".join("x%d" % i for i in range(nvars)), ZZ)[0]
         for _ in range(2):
