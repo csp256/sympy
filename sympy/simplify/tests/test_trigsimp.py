@@ -15,7 +15,8 @@ from sympy.functions.elementary.trigonometric import (acot, atan)
 from sympy.integrals.integrals import integrate
 from sympy.matrices.dense import Matrix
 from sympy.simplify.simplify import simplify
-from sympy.simplify.trigsimp import (exptrigsimp, trigsimp)
+from sympy.functions.elementary.trigonometric import TrigonometricFunction
+from sympy.simplify.trigsimp import (exptrigsimp, trigsimp, _split_add)
 
 from sympy.testing.pytest import XFAIL
 
@@ -243,20 +244,60 @@ def test_trigsimp_issue_23983():
     assert trigsimp(trigsimp(expr)) == expected
 
 
+def test_trigsimp_add_split_nonrational_terms():
+    # Unrelated terms containing log(-x**2), which becomes
+    # log(x**2) + I*pi, are set aside and left unchanged.
+    x = Symbol('x', nonzero=True)
+    trig = -sin(x - 3)/cos(x - 3) + 3*cos(3*x + 1)/sin(3*x + 1)
+    rest = -2/x + 2/(x*log(-x**2))
+    assert _split_add(trig + rest, TrigonometricFunction) == (rest, trig)
+    assert trigsimp(trig + rest) == -tan(x - 3) + 3/tan(3*x + 1) + rest
+
+
+def test_trigsimp_add_split_rational_terms():
+    # Unrelated terms that are rational functions with rational
+    # coefficients are not set aside, so that simplify (which calls
+    # trigsimp on an intermediate form) gives as compact a result as
+    # trigsimp itself.
+    r, theta = symbols('r theta')
+    M, a = symbols('M a', positive=True)
+    D = -2*M*r + a**2 + r**2
+    C = a**2*cos(theta)**2 + r**2
+    e = (-2*a**4*sin(2*theta)**2/(D*(a**2*cos(2*theta) + a**2 + 2*r**2)**2)
+         - 2*a**2*cos(2*theta)/(D*(a**2*cos(2*theta) + a**2 + 2*r**2))
+         - r**2/C**2 - r*(r*D + (M - r)*C)/(C**2*D) + 1/C)
+    expected = M*r*(r**2 - 3*a**2*cos(theta)**2)/(C**2*D)
+    assert _split_add(x + 1/x + sin(x)**2, TrigonometricFunction) == (
+        0, x + 1/x + sin(x)**2)
+    assert trigsimp(e) == expected
+    assert simplify(e) == expected
+
+
 def test_trigsimp_add_split():
     a = Symbol('a')
+    L = log(y)
 
-    # Trig and hyperbolic simplification should not alter unrelated algebra.
+    # Terms unrelated to trig/hyperbolic functions are left untouched when
+    # they are not rational functions with rational coefficients, since they
+    # would make the simplification work over an expensive domain.
+    expr = (L*(L - 1/L) - L**2 + cos(x)**2 + sin(x)**2 +
+            cosh(x)**2 - sinh(x)**2)
+    assert trigsimp(expr) == L*(L - 1/L) - L**2 + 2
+    expr = x*(x - sqrt(2)/x) - x**2 + cos(x)**2 + sin(x)**2
+    assert trigsimp(expr) == x*(x - sqrt(2)/x) - x**2 + 1
+
+    # Unrelated rational functions with rational coefficients are cheap to
+    # simplify, so they are simplified together with the trig terms.
     expr = (x*(x - 1/x) - x**2 + cos(x)**2 + sin(x)**2 +
             cosh(x)**2 - sinh(x)**2)
-    assert trigsimp(expr) == -x**2 + x*(x - 1/x) + 2
+    assert trigsimp(expr) == 1
 
     # Algebraic terms that are coefficients of trig/hyperbolic terms must
     # remain available for identities, while unrelated terms stay untouched.
-    expr = a - 2*a*cos(x)**2 + a*y*(y - 1/y)
-    assert trigsimp(expr) == a*y*(y - 1/y) - a*cos(2*x)
-    expr = a + a*sinh(x)**2 + a*y*(y - 1/y)
-    assert trigsimp(expr) == a*y*(y - 1/y) + a*cosh(x)**2
+    expr = a - 2*a*cos(x)**2 + a*L*(L - 1/L)
+    assert trigsimp(expr) == a*L*(L - 1/L) - a*cos(2*x)
+    expr = a + a*sinh(x)**2 + a*L*(L - 1/L)
+    assert trigsimp(expr) == a*L*(L - 1/L) + a*cosh(x)**2
 
     # Nonalgebraic terms can be related to trig functions even when they do
     # not contain a TrigonometricFunction explicitly.
@@ -312,7 +353,9 @@ def test_hyperbolic_simp():
     assert trigsimp(cosh(x)**2 - 1) == sinh(x)**2
     assert trigsimp(cosh(x)**2 - sinh(x)**2) == 1
     expr = x*(x - 1/x) - x**2 + cosh(x)**2 - sinh(x)**2
-    assert trigsimp(expr) == -x**2 + x*(x - 1/x) + 1
+    assert trigsimp(expr) == 0
+    expr = log(y)*(log(y) - 1/log(y)) - log(y)**2 + cosh(x)**2 - sinh(x)**2
+    assert trigsimp(expr) == log(y)*(log(y) - 1/log(y)) - log(y)**2 + 1
     assert trigsimp(1 - tanh(x)**2) == 1/cosh(x)**2
     assert trigsimp(1 - 1/cosh(x)**2) == tanh(x)**2
     assert trigsimp(tanh(x)**2 + 1/cosh(x)**2) == 1
