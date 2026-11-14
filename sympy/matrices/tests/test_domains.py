@@ -1,9 +1,11 @@
 # Test Matrix/DomainMatrix interaction.
 from __future__ import annotations
 
+from unittest.mock import patch
 
 from sympy import GF, ZZ, QQ, EXRAW
 from sympy.polys.matrices import DomainMatrix, DM
+from sympy.matrices.inverse import _inv_DM
 
 from sympy import (
     Matrix,
@@ -112,3 +114,14 @@ def test_Matrix_to_DM():
     # Options cannot be used with the domain parameter
     M = Matrix([[1, 2], [3, 4]])
     raises(TypeError, lambda: M.to_DM(domain=QQ, field=True))
+
+
+def test_Matrix_inv_DMNC():
+    expected = Matrix([[QQ(1, 2), 0], [0, QQ(1, 3)]])
+    for cls in MATRIX_TYPES:
+        M = cls([[2, 0], [0, 3]])
+        for method in (None, 'DM', 'DMNC'):
+            with patch('sympy.matrices.inverse._inv_DM', wraps=_inv_DM) as inv:
+                assert M.inv(method=method) == expected
+                inv.assert_called_once()
+                assert inv.call_args.kwargs.get('cancel', True) is (method != 'DMNC')
