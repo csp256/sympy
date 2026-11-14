@@ -568,7 +568,7 @@ class Factors:
             factors = S(factors)
         if isinstance(factors, Factors):
             factors = factors.factors.copy()
-        elif factors in (None, S.One):
+        elif factors is None or (not isinstance(factors, dict) and factors == S.One):
             factors = {}
         elif factors is S.Zero or factors == 0:
             factors = {S.Zero: S.One}
