@@ -11,13 +11,15 @@ if TYPE_CHECKING:
 
 from sympy.polys.densearith import (
     dup_neg, dmp_neg,
+    dmp_add,
     dup_sub, dmp_sub,
     dup_mul, dmp_mul,
+    dmp_sqr,
     dup_quo, dmp_quo,
     dup_mul_ground, dmp_mul_ground)
 from sympy.polys.densebasic import (
     dup, dmp, _dup, _dmp,
-    dup_strip,
+    dup_strip, dmp_strip,
     dup_LC, dmp_ground_LC,
     dmp_zero_p,
     dmp_ground,
@@ -111,6 +113,84 @@ def dmp_sqf_p(f, u, K):
     return True
 
 
+def _dmp_quadratic_parts(
+    f: dmp[Alg], u: int, K: AlgebraicField
+) -> tuple[dmp[MPQ], dmp[MPQ]]:
+    """Write ``f`` in ``K[X]`` as ``A + a*B`` with ``A, B`` in ``k[X]``.
+
+    Here ``K = k(a)`` is an algebraic field of degree 2, so that every
+    coefficient of ``f`` is represented as a polynomial in ``a`` of degree at
+    most 1.
+    """
+    zero = K.dom.zero
+    A: list = []
+    B: list = []
+
+    if not u:
+        for c in f:
+            rep = c.to_list() # type: ignore
+            n = len(rep)
+            A.append(rep[-1] if n else zero)
+            B.append(rep[0] if n == 2 else zero)
+        return _dmp(dup_strip(A)), _dmp(dup_strip(B))
+
+    v = u - 1
+
+    for c in f:
+        Ac, Bc = _dmp_quadratic_parts(c, v, K) # type: ignore
+        A.append(Ac)
+        B.append(Bc)
+
+    return dmp_strip(A, u), dmp_strip(B, u)
+
+
+def _dmp_quadratic_norm(f: dmp[Alg], u: int, K: AlgebraicField) -> dmp[MPQ]:
+    r"""Norm of ``f`` in ``K[X]`` for an algebraic field of degree 2.
+
+    Let `K = k(a)` where `a` has minimal polynomial `p = p_2 t^2 + p_1 t + p_0`
+    and write `f = A + a B` with `A, B` in `k[X]`. If `B = 0` then the norm is
+    `A^2`. Otherwise `f` has degree 1 in `a` and
+
+    .. math::
+
+        \text{Res}_t(p, A + t B) = p_2 (A + a B)(A + \bar{a} B)
+                                  = p_2 A^2 - p_1 A B + p_0 B^2
+
+    because `a + \bar{a} = -p_1/p_2` and `a \bar{a} = p_0/p_2`. This is the
+    same polynomial as computed by :func:`dmp_norm` with a resultant but
+    needs only three multiplications.
+    """
+    k = K.dom
+    p2, p1, p0 = K.mod.to_list()
+
+    A, B = _dmp_quadratic_parts(f, u, K)
+
+    r = dmp_sqr(A, u, k)
+
+    if dmp_zero_p(B, u):
+        return r
+
+    if p2 != k.one:
+        r = dmp_mul_ground(r, p2, u, k)
+    if p1:
+        r = dmp_sub(r, dmp_mul_ground(dmp_mul(A, B, u, k), p1, u, k), u, k)
+    if p0:
+        r = dmp_add(r, dmp_mul_ground(dmp_sqr(B, u, k), p0, u, k), u, k)
+
+    return r
+
+
+def _dmp_norm(f: dmp[Alg], u: int, K: AlgebraicField) -> dmp[MPQ]:
+    """Norm of ``f`` in ``K[X]`` computed as a resultant over ``k``."""
+    if K.mod.degree() == 2:
+        return _dmp_quadratic_norm(f, u, K)
+
+    g = dmp_raise(K.mod.to_list(), u + 1, 0, K.dom)
+    h, _ = dmp_inject(f, u, K, front=True)
+
+    return dmp_resultant(g, h, u + 1, K.dom) # type: ignore
+
+
 def dup_sqf_norm(f: dup[Alg], K: AlgebraicField) -> tuple[int, dup[Alg], dup[MPQ]]:
     r"""
     Find a shift of `f` in `K[x]` that has square-free norm.
@@ -179,13 +259,10 @@ def dup_sqf_norm(f: dup[Alg], K: AlgebraicField) -> tuple[int, dup[Alg], dup[MPQ
     if not K.is_Algebraic:
         raise DomainError("ground domain must be algebraic")
 
-    s, g = 0, dmp_raise(K.mod.to_list(), 1, 0, K.dom)
+    s = 0
 
     while True:
-        h, _ = dmp_inject(_dmp(f), 0, K, front=True)
-        r = dmp_resultant(g, h, 1, K.dom)
-
-        r2: dmp[MPQ] = r # type: ignore
+        r2 = _dmp_norm(_dmp(f), 0, K)
 
         if dup_sqf_p(r2, K.dom):
             break
@@ -310,14 +387,9 @@ def dmp_sqf_norm(
     if not K.is_Algebraic:
         raise DomainError("ground domain must be algebraic")
 
-    g = dmp_raise(K.mod.to_list(), u + 1, 0, K.dom)
-
     for ss, f in _dmp_sqf_norm_shifts(f, u, K):
 
-        h, _ = dmp_inject(f, u, K, front=True)
-        r = dmp_resultant(g, h, u + 1, K.dom)
-
-        r2: dmp[MPQ] = r # type: ignore
+        r2 = _dmp_norm(f, u, K)
 
         if dmp_sqf_p(r2, u, K.dom):
             break
@@ -402,10 +474,7 @@ def dmp_norm(f, u, K):
     if not K.is_Algebraic:
         raise DomainError("ground domain must be algebraic")
 
-    g = dmp_raise(K.mod.to_list(), u + 1, 0, K.dom)
-    h, _ = dmp_inject(f, u, K, front=True)
-
-    return dmp_resultant(g, h, u + 1, K.dom)
+    return _dmp_norm(f, u, K)
 
 
 def dup_gf_sqf_part(f, K):

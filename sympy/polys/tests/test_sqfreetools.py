@@ -1,9 +1,17 @@
 """Tests for square-free decomposition algorithms and related tools. """
 from __future__ import annotations
 
+from random import Random
+
+from sympy.core.numbers import I, Rational
+from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.polys.rings import ring
 from sympy.polys.domains import FF, ZZ, QQ
 from sympy.polys.specialpolys import f_polys
+from sympy.polys.densebasic import dmp_raise, dmp_inject
+from sympy.polys.euclidtools import dmp_resultant
+from sympy.polys.sqfreetools import (
+    dmp_norm, dmp_sqf_norm, dmp_sqf_p, _dmp_quadratic_norm)
 
 from sympy.testing.pytest import raises
 from sympy.external.gmpy import MPQ
@@ -159,3 +167,61 @@ def test_issue_26178():
     assert (x**2 - 2*y**2 + 1).sqf_list() == (MPQ(1,1), [(x**2 - 2*y**2 + 1, 1)])
     assert (x**2 - 2*z**2 + 1).sqf_list() == (MPQ(1,1), [(x**2 - 2*z**2 + 1, 1)])
     assert (y**2 - 2*z**2 + 1).sqf_list() == (MPQ(1,1), [(y**2 - 2*z**2 + 1, 1)])
+
+
+def _resultant_norm(f, u, K):
+    g = dmp_raise(K.mod.to_list(), u + 1, 0, K.dom)
+    h, _ = dmp_inject(f, u, K, front=True)
+    return dmp_resultant(g, h, u + 1, K.dom)
+
+
+def test_quadratic_norm():
+    # The closed form norm for degree 2 extensions must give exactly the same
+    # polynomial as the resultant, including for a non-monic minimal
+    # polynomial (sqrt(2)/3 has minimal polynomial 9*x**2 - 2).
+    rng = Random(0)
+    exts = [I, sqrt(2), sqrt(-3), sqrt(5)/2 + Rational(1, 2), sqrt(2)/3]
+    for ext in exts:
+        K = QQ.algebraic_field(ext)
+        assert K.mod.degree() == 2
+        for n in range(1, 4):
+            R = ring(["x%d" % i for i in range(n)], K)[0]
+            u = n - 1
+            for _ in range(5):
+                f = R.zero
+                for _ in range(rng.randint(0, 5)):
+                    c = K.from_sympy(rng.randint(-3, 3) + rng.randint(-3, 3)*ext)
+                    m = R.one
+                    for x in R.gens:
+                        m *= x**rng.randint(0, 3 - u)
+                    f += c*m/rng.randint(1, 3)
+                F = R.to_dense(f)
+                N = _resultant_norm(F, u, K)
+                assert _dmp_quadratic_norm(F, u, K) == N
+                assert dmp_norm(F, u, K) == N
+                if f and f.is_squarefree:
+                    s, G, r = dmp_sqf_norm(F, u, K)
+                    assert r == _resultant_norm(G, u, K)
+                    assert dmp_sqf_p(r, u, QQ)
+
+
+def test_quadratic_sqf_norm_shifts():
+    # The shifts chosen by sqf_norm are those found with the resultant.
+    expected = {
+        I: [[2, 2, 2], [1, 0, 0], [2, 2, 2], [1, 0, 0], [0, 1, 0], [1, 0, 0],
+            [1, 1, 1], [1, 0, 0]],
+        sqrt(2): [[1, 0, 0], [2, 2, 2], [1, 0, 0], [1, 0, 0], [0, 1, 0],
+                  [1, 0, 0], [1, 1, 1], [1, 0, 0]],
+        sqrt(5)/2 + Rational(1, 2): [[1, 0, 0], [1, 0, 0], [1, 0, 0],
+            [1, 0, 0], [0, 1, 0], [1, 0, 0], [0, 0, 1], [1, 0, 0]],
+        sqrt(2)/3: [[1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0], [0, 1, 0],
+                    [1, 0, 0], [1, 1, 1], [1, 0, 0]],
+    }
+    for ext, shifts in expected.items():
+        K = QQ.algebraic_field(ext)
+        R, x, y, z = ring("x,y,z", K)
+        a = K.unit
+        cases = [x**2 + 1, x**2 - 2, x**4 - 1, x**2 + y**2, x*y + y**2,
+                 x**2 - 5*y**2, (x + a*y)*(x - a*y)*(z + 1),
+                 x**2 + x*y + y**2 + z**2]
+        assert [f.sqf_norm()[0] for f in cases] == shifts
