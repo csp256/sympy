@@ -317,6 +317,16 @@ def test_residue():
     assert binomial_mod(10**18, 10**12, (10**5 + 3)**2) == 3744312326
 
 
+def test_discrete_log_supplied_composite_order():
+    for n, b, order, exponent in [(1019, 2, 1018, 2),
+                                  (10007, 5, 10006, 1234),
+                                  (17, 3, 16, 7)]:
+        a = pow(b, exponent, n)
+        assert discrete_log(n, a, b) == exponent
+        assert discrete_log(n, a, b, order=order) == exponent
+        assert discrete_log(n, a, b, order=order, prime_order=False) == exponent
+
+
 @slow
 def test_discrete_log_large_prime_order():
     # XXX: This case is much faster with _discrete_log_pohlig_hellman, but
