@@ -231,6 +231,63 @@ def test_dmp_subresultants():
     assert Rx.dup_resultant(f, g) == 2930944*t**6 + 2198208*t**4 + 549552*t**2 + 45796
 
 
+
+def _random_dmp(rng, u, deg, c, K):
+    from sympy.polys.densebasic import dmp_strip
+    if u < 0:
+        if rng.random() > 0.7:
+            return K.zero
+        elif K.is_QQ:
+            return K(rng.randint(-c, c), rng.randint(1, 4))
+        else:
+            return K(rng.randint(-c, c))
+    f = [_random_dmp(rng, u - 1, deg, c, K) for _ in range(rng.randint(1, deg + 1))]
+    return dmp_strip(f, u)
+
+
+def test_dmp_zz_collins_resultant():
+    from random import Random
+    from sympy.polys.euclidtools import (dmp_prs_resultant,
+        dmp_zz_collins_resultant, dmp_qq_collins_resultant, _collins_prime)
+
+    R, x, y = ring("x,y", ZZ)
+
+    # Same convention as the subresultant PRS when deg(f) < deg(g)
+    f = -17*x - 7*y
+    g = 19*x**3 - x**2*y + 12*x + 4
+    r = R.dmp_prs_resultant(f, g)[0]
+    assert R.dmp_zz_collins_resultant(f, g) == r
+    assert R.dmp_zz_collins_resultant(g, f) == R.dmp_prs_resultant(g, f)[0]
+
+    # Leading coefficient vanishing at some evaluation points
+    f = y*(y - 1)*x**2 + x + y
+    g = (y - 2)*x**3 + y**2*x + 1
+    assert R.dmp_zz_collins_resultant(f, g) == R.dmp_prs_resultant(f, g)[0]
+
+    # Leading coefficient divisible by the first prime and large coefficients
+    p = _collins_prime(0)
+    f = p*x**2 + 10**30*x*y + y**3 - 7
+    g = 3*p*x**2 - 10**25*y**2*x + 1
+    assert R.dmp_zz_collins_resultant(f, g) == R.dmp_prs_resultant(f, g)[0]
+
+    # Arguments of degree 0 in x
+    assert R.dmp_zz_collins_resultant(x + y, R(5)) == R.dmp_prs_resultant(x + y, R(5))[0]
+    assert R.dmp_zz_collins_resultant(R(5), R(3)) == R.dmp_prs_resultant(R(5), R(3))[0]
+
+    rng = Random(0)
+    for _ in range(30):
+        u = rng.randint(1, 3)
+        deg = 3 if u == 1 else 2 if u == 2 else 1
+        c = rng.choice([3, 100, 10**12])
+        f = _random_dmp(rng, u, deg, c, ZZ)
+        g = _random_dmp(rng, u, deg, c, ZZ)
+        r = dmp_prs_resultant(f, g, u, ZZ)[0]
+        assert dmp_zz_collins_resultant(f, g, u, ZZ) == r
+        F = _random_dmp(rng, u, deg, c, QQ)
+        G = _random_dmp(rng, u, deg, c, QQ)
+        r = dmp_prs_resultant(F, G, u, QQ)[0]
+        assert dmp_qq_collins_resultant(F, G, u, QQ) == r
+
 def test_dup_discriminant():
     R, x = ring("x", ZZ)
 

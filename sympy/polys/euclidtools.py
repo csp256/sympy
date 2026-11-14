@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 from typing import overload, Literal, TYPE_CHECKING
 
 from sympy.polys.densearith import (
@@ -24,14 +25,14 @@ from sympy.polys.densearith import (
 from sympy.polys.densebasic import (
     dup, dmp, _dup, _dmp,
     dup_strip, dmp_raise,
+    dmp_strip,
     dmp_zero, dmp_one, dmp_ground,
     dmp_one_p, dmp_zero_p,
     dmp_zeros,
-    dup_degree, dmp_degree, dmp_degree_in,
+    dup_degree, dmp_degree, dmp_degree_in, dmp_degree_list,
     dup_LC, dmp_LC, dmp_ground_LC,
     dmp_multi_deflate, dmp_inflate,
-    dup_convert, dmp_convert,
-    dmp_apply_pairs)
+    dup_convert, dmp_convert)
 from sympy.polys.densetools import (
     dup_clear_denoms, dmp_clear_denoms,
     dup_diff, dmp_diff,
@@ -41,7 +42,7 @@ from sympy.polys.densetools import (
     dup_primitive, dmp_ground_primitive,
     dup_extract, dmp_ground_extract)
 from sympy.polys.galoistools import (
-    gf_int, gf_crt)
+    gf_int)
 from sympy.polys.polyconfig import query
 from sympy.polys.polyerrors import (
     MultivariatePolynomialError,
@@ -675,13 +676,210 @@ def dmp_zz_modular_resultant(f, g, p, u, K):
     return r
 
 
-def _collins_crt(r, R, P, p, K):
-    """Wrapper of CRT for Collins's resultant algorithm. """
-    return gf_int(gf_crt([r, R], [P, p], K), P*p)
+def _gf_rem_list(f: list[int], g: list[int], p: int) -> list[int]:
+    """Remainder of ``f`` by ``g`` in `GF(p)[x]` for lists of ``int``.
+
+    The leading coefficient of ``g`` must be nonzero modulo ``p``. The result
+    has no leading zeros.
+    """
+    dg = len(g) - 1
+    f = f[:]
+    k = len(f) - dg
+    if k <= 0:
+        return f
+    inv = pow(g[0], -1, p)
+    g1 = g[1:]
+    for i in range(k):
+        c = f[i]
+        if c:
+            c = c * inv % p
+            for j, gj in enumerate(g1, i + 1):
+                f[j] = (f[j] - c * gj) % p
+    f = f[k:]
+    for i, c in enumerate(f):
+        if c:
+            return f[i:]
+    return []
+
+
+def _gf_resultant_list(f: list[int], g: list[int], p: int) -> int:
+    """Resultant of ``f`` and ``g`` in `GF(p)[x]` for lists of ``int``.
+
+    Both leading coefficients must be nonzero modulo ``p``. Uses the Euclidean
+    algorithm with the rule `\\operatorname{res}(f, g) = (-1)^{nm}
+    \\operatorname{lc}(g)^{n - k} \\operatorname{res}(g, f \\bmod g)` where `n`,
+    `m` and `k` are the degrees of `f`, `g` and `f \\bmod g`.
+    """
+    r = 1
+    while True:
+        n, m = len(f) - 1, len(g) - 1
+        if not m:
+            return r * pow(g[0], n, p) % p
+        h = _gf_rem_list(f, g, p)
+        if not h:
+            return 0
+        if n & m & 1:
+            r = -r
+        r = r * pow(g[0], n - len(h) + 1, p) % p
+        f, g = g, h
+
+
+def _gf_eval_last(f: list, u: int, a: int, p: int) -> list:
+    """Evaluate the innermost variable of nested lists ``f`` at ``a`` mod ``p``."""
+    if u == 1:
+        result = []
+        for c in f:
+            v = 0
+            for ci in c:
+                v = (v*a + ci) % p
+            result.append(v)
+        return result
+    else:
+        v = u - 1
+        return [_gf_eval_last(c, v, a, p) for c in f]
+
+
+def _gf_nonzero(f, u: int) -> bool:
+    """True if nested lists ``f`` contain a nonzero entry."""
+    if u < 0:
+        return bool(f)
+    v = u - 1
+    return any(_gf_nonzero(c, v) for c in f)
+
+
+def _gf_interpolation_matrix(points: list[int], p: int) -> list[list[int]]:
+    """Inverse Vandermonde matrix for ``points`` mod ``p``.
+
+    Row ``k`` of the result gives the coefficient of `x^{d-k}` of the
+    polynomial of degree at most `d = len(points) - 1` that interpolates given
+    values at ``points``, as a linear form in those values (Lagrange
+    interpolation).
+    """
+    M = [1]
+    for a in points:
+        M = [(c - a*d) % p for c, d in zip(M + [0], [0] + M)]
+
+    columns = []
+    for a in points:
+        # Synthetic division of M by (x - a): the numerator of the Lagrange
+        # basis polynomial of a, whose value at a is its denominator.
+        q, c = [], 0
+        for mi in M[:-1]:
+            c = (c*a + mi) % p
+            q.append(c)
+        w = 0
+        for qi in q:
+            w = (w*a + qi) % p
+        w = pow(w, -1, p)
+        columns.append([qi * w % p for qi in q])
+
+    return [list(row) for row in zip(*columns)]
+
+
+def _gf_dmp_resultant(
+    f: list, g: list, u: int, D: list[int], p: int, cache: dict
+) -> list[int]:
+    """Resultant of ``f`` and ``g`` in `GF(p)[x_0, \\ldots, x_u]` in `x_0`.
+
+    ``f`` and ``g`` are nested lists of ``int`` whose leading coefficients in
+    `x_0` are nonzero modulo ``p``. ``D`` holds upper bounds for the degrees of
+    the resultant in `x_1, \\ldots, x_u`. The result is returned as a flat
+    dense list of length `\\prod_i (D_i + 1)` in row-major order, highest
+    degrees first. Interpolation matrices are memoized in ``cache``, which is
+    specific to ``p``.
+
+    This is the evaluation and interpolation part of Collins's algorithm: the
+    innermost variable is evaluated at enough points that keep the leading
+    coefficients nonzero, and the resultants of the images are interpolated.
+    """
+    if not u:
+        return [_gf_resultant_list(f, g, p)]
+
+    v, E, d = u - 1, D[:-1], D[-1]
+    points, values = [], []
+    a = 0
+
+    while len(points) <= d:
+        if a == p:
+            raise HomomorphismFailed('no luck')
+
+        F = _gf_eval_last(f, u, a, p)
+
+        if _gf_nonzero(F[0], v - 1):
+            G = _gf_eval_last(g, u, a, p)
+
+            if _gf_nonzero(G[0], v - 1):
+                points.append(a)
+                values.append(_gf_dmp_resultant(F, G, v, E, p, cache))
+
+        a += 1
+
+    key = tuple(points)
+    W = cache.get(key)
+    if W is None:
+        W = cache[key] = _gf_interpolation_matrix(points, p)
+
+    result = []
+    for column in zip(*values):
+        for row in W:
+            result.append(sum(map(operator.mul, row, column)) % p)
+
+    return result
+
+
+def _dmp_from_flat(r: list[int], u: int, D: list[int], K: Domain[Er]) -> dmp[Er]:
+    """Build a stripped ``dmp`` in ``K[X]`` from a flat dense list."""
+    if not u:
+        return _dmp(dup_strip([K(c) for c in r]))
+
+    size = 1
+    for d in D[1:]:
+        size *= d + 1
+
+    v, E = u - 1, D[1:]
+    f = [_dmp_from_flat(r[i:i + size], v, E, K) for i in range(0, len(r), size)]
+
+    return dmp_strip(f, u)
+
+
+def _dmp_to_int_lists(f, u: int) -> list:
+    """Convert ``f`` in ``ZZ[X]`` to nested lists of ``int``."""
+    if not u:
+        return [int(c) for c in f]
+    v = u - 1
+    return [_dmp_to_int_lists(c, v) for c in f]
+
+
+def _int_lists_mod(f: list, u: int, p: int) -> list:
+    """Reduce nested lists of ``int`` modulo ``p``."""
+    if not u:
+        return [c % p for c in f]
+    v = u - 1
+    return [_int_lists_mod(c, v, p) for c in f]
+
+
+def _int_lists_l1(f, u: int) -> int:
+    """Sum of absolute values of nested lists of ``int``."""
+    if u < 0:
+        return abs(f)
+    v = u - 1
+    return sum(_int_lists_l1(c, v) for c in f)
+
+
+_collins_primes: list[int] = []
+
+
+def _collins_prime(i: int) -> int:
+    """The ``i``-th prime used by :func:`dmp_zz_collins_resultant`."""
+    while len(_collins_primes) <= i:
+        from sympy.ntheory import prevprime
+        p = _collins_primes[-1] if _collins_primes else 2**30
+        _collins_primes.append(prevprime(p))
+    return _collins_primes[i]
 
 
 def dmp_zz_collins_resultant(f, g, u, K):
-    """
+    r"""
     Collins's modular resultant algorithm in `Z[X]`.
 
     Examples
@@ -696,49 +894,97 @@ def dmp_zz_collins_resultant(f, g, u, K):
     >>> R.dmp_zz_collins_resultant(f, g)
     -2*y**2 - 5*y + 1
 
-    """
+    Explanation
+    ===========
 
+    The resultant is computed modulo several primes `p` and recovered with the
+    Chinese remainder theorem [Collins71]_. Modulo each prime the variables
+    `x_1, \ldots, x_u` are evaluated at points that keep both leading
+    coefficients nonzero, the univariate resultants are computed with the
+    Euclidean algorithm in `GF(p)[x_0]`, and the results are interpolated. The
+    degree of the resultant in `x_i` is at most `n \deg_{x_i} g + m \deg_{x_i}
+    f` where `n` and `m` are the degrees of `f` and `g` in `x_0`.
+
+    Writing `f = \sum_i f_i x_0^i` and `g = \sum_j g_j x_0^j`, every
+    coefficient of the resultant is bounded in absolute value by
+
+    .. math::
+
+        \Big(\sum_i \|f_i\|_1^2\Big)^{m/2} \Big(\sum_j \|g_j\|_1^2\Big)^{n/2}
+
+    by Hadamard's inequality applied to the Sylvester matrix at points of the
+    unit torus [Goldstein74]_, so primes are taken until their product exceeds
+    twice this bound. Primes for which a leading coefficient in `x_0` vanishes
+    are skipped, so that every image is the image of the resultant. The
+    result is therefore exactly the resultant of `f` and `g`, with the same
+    convention as :func:`dmp_prs_resultant` when `n < m`: the arguments are
+    swapped, which gives `\operatorname{res}(g, f)`.
+
+    References
+    ==========
+
+    .. [Collins71] G. E. Collins, The calculation of multivariate polynomial
+       resultants, Journal of the ACM 18(4) (1971), pp. 515--532.
+    .. [Goldstein74] A. J. Goldstein and R. L. Graham, A Hadamard-type bound
+       on the coefficients of a determinant of polynomials, SIAM Review 16(3)
+       (1974), pp. 394--395.
+
+    """
     n = dmp_degree(f, u)
     m = dmp_degree(g, u)
 
     if n < 0 or m < 0:
-        return dmp_zero(u - 1, K)
+        return dmp_zero(u - 1, K) if u else K.zero
 
-    A = dmp_max_norm(f, u, K)
-    B = dmp_max_norm(g, u, K)
-
-    a = dmp_ground_LC(f, u, K)
-    b = dmp_ground_LC(g, u, K)
+    # Same convention as dmp_prs_resultant, which swaps f and g when f has the
+    # lower degree and so returns res(g, f) = (-1)**(n*m) * res(f, g).
+    if n < m:
+        f, g, n, m = g, f, m, n
 
     v = u - 1
 
-    B = K(2)*K.factorial(K(n + m))*A**m*B**n
-    r, p, P = dmp_zero(v, K), K.one, K.one
+    fdegs = dmp_degree_list(f, u)[1:]
+    gdegs = dmp_degree_list(g, u)[1:]
+    D = [n*max(dg, 0) + m*max(df, 0) for df, dg in zip(fdegs, gdegs)]
 
-    from sympy.ntheory import nextprime
+    fi = _dmp_to_int_lists(f, u)
+    gi = _dmp_to_int_lists(g, u)
 
-    while P <= B:
-        p = K(nextprime(p))
+    F2 = sum(_int_lists_l1(c, v)**2 for c in fi)
+    G2 = sum(_int_lists_l1(c, v)**2 for c in gi)
 
-        while not (a % p) or not (b % p):
-            p = K(nextprime(p))
+    bound = 4 * F2**m * G2**n
 
-        F = dmp_ground_trunc(f, p, u, K)
-        G = dmp_ground_trunc(g, p, u, K)
+    r: list[int] = []
+    P, i = 1, 0
 
-        try:
-            R = dmp_zz_modular_resultant(F, G, p, u, K)
-        except HomomorphismFailed:
+    while P*P <= bound:
+        p = _collins_prime(i)
+        i += 1
+
+        F = _int_lists_mod(fi, u, p)
+        G = _int_lists_mod(gi, u, p)
+
+        if not (_gf_nonzero(F[0], v) and _gf_nonzero(G[0], v)):
             continue
 
-        if K.is_one(P):
+        R = _gf_dmp_resultant(F, G, u, D, p, {})
+
+        if P == 1:
             r = R
         else:
-            r = dmp_apply_pairs(r, R, _collins_crt, (P, p, K), v, K)
+            Pinv = pow(P, -1, p)
+            r = [a + P*((b - a)*Pinv % p) for a, b in zip(r, R)]
 
         P *= p
 
-    return r
+    half = P // 2
+    r = [c - P if c > half else c for c in r]
+
+    if not u:
+        return K(r[0])
+
+    return _dmp_from_flat(r, v, D, K)
 
 
 def dmp_qq_collins_resultant(f, g, u, K0):
