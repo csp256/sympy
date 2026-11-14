@@ -6,7 +6,8 @@ from sympy.core import (sympify, Basic, S, Expr, factor_terms,
                         Mul, Add, bottom_up)
 from sympy.core.cache import cacheit
 from sympy.core.function import (count_ops, _mexpand, FunctionClass, expand,
-                                 expand_mul, _coeff_isneg, Derivative)
+                                 expand_mul, _coeff_isneg, Derivative,
+                                 AppliedUndef)
 from sympy.core.numbers import I, Integer
 from sympy.core.intfunc import igcd
 from sympy.core.sorting import _nodes
@@ -518,13 +519,18 @@ def trigsimp(expr, inverse=False, **opts):
     >>> trigsimp(log(e))
     log(2)
 
-    ``trigsimp`` purposely avoids modifying terms or factors that are
-    independent of trigonometric functions:
+    ``trigsimp`` purposely avoids modifying factors that are independent of
+    trigonometric functions, and also terms that are independent of them
+    unless they are rational functions with rational coefficients (which
+    are cheap to simplify together with the trigonometric terms):
 
-    >>> expr = x*(x - 1/x) - x**2 + cos(x)**2 + sin(x)**2
+    >>> from sympy.abc import y
+    >>> expr = log(y)*(log(y) - 1/log(y)) - log(y)**2 + cos(x)**2 + sin(x)**2
     >>> trigsimp(expr)
-    -x**2 + x*(x - 1/x) + 1
+    (log(y) - 1/log(y))*log(y) - log(y)**2 + 1
     >>> trigsimp(expr.expand())
+    0
+    >>> trigsimp(x*(x - 1/x) - x**2 + cos(x)**2 + sin(x)**2)
     0
 
     ``trigsimp`` does not perform general rational simplification. If rational
@@ -1174,8 +1180,49 @@ def __trigsimp(expr, deep=False):
 #------------------- end of old trigsimp routines --------------------
 
 
+def _is_rational_over_QQ(e):
+    """Return True if ``e`` is a rational function with rational
+    coefficients.
+
+    ``e`` must be built from rational numbers, symbols and applied undefined
+    functions (with such arguments) and their derivatives using only
+    addition, multiplication and integer powers. Polynomial arithmetic on
+    such an expression, as done by ``factor`` and ``cancel`` in ``_futrig``,
+    works over ``ZZ`` or ``QQ``. Any other number (e.g. ``I``, ``sqrt(2)``,
+    ``pi`` or a Float) or function would make that arithmetic work over an
+    extension of ``QQ`` or ``EX``, or with generators whose rebuilding can
+    introduce such numbers.
+    """
+    stack = [e]
+    while stack:
+        a = stack.pop()
+        if a.is_Rational or a.is_Symbol:
+            continue
+        if a.is_Add or a.is_Mul:
+            stack.extend(a.args)
+        elif a.is_Pow and a.exp.is_Integer:
+            stack.append(a.base)
+        elif isinstance(a, AppliedUndef):
+            stack.extend(a.args)
+        elif isinstance(a, Derivative) and all(
+                v.is_Symbol for v in a.variables):
+            stack.append(a.expr)
+        else:
+            return False
+    return True
+
+
 def _split_add(e, func):
-    """Separate terms unrelated to a function class from an Add."""
+    """Separate terms unrelated to a function class from an Add.
+
+    Return ``(independent, active)`` where ``active`` holds the terms that
+    should be simplified with ``func``. Setting the unrelated terms aside
+    keeps them from making the simplification of ``active`` work over an
+    expensive domain, so they are only set aside when that is what they
+    would do: if they are all rational functions with rational coefficients
+    (see ``_is_rational_over_QQ``), ``(0, e)`` is returned and ``e`` is
+    simplified as a whole.
+    """
     terms = [a for a in e.args if a.has(func)]
     coeffs = [a.as_independent(func)[0] for a in terms]
     func_symbols = set().union(*(
@@ -1197,6 +1244,8 @@ def _split_add(e, func):
         else:
             independent.append(a)
 
+    if all(_is_rational_over_QQ(a) for a in independent):
+        return S.Zero, e
     return Add(*independent), Add(*active)
 
 
