@@ -32,7 +32,7 @@ from sympy.polys.densetools import (
 from sympy.polys.euclidtools import (
     dup_inner_gcd, dmp_inner_gcd,
     dup_gcd, dmp_gcd,
-    dmp_resultant, dmp_primitive)
+    dmp_resultant, dmp_qq_collins_resultant, dmp_primitive)
 from sympy.polys.galoistools import (
     gf_sqf_list, gf_sqf_part)
 from sympy.polys.polyerrors import (
@@ -111,6 +111,24 @@ def dmp_sqf_p(f, u, K):
     return True
 
 
+def _dmp_norm(f: dmp[Alg], u: int, K: AlgebraicField) -> dmp[MPQ]:
+    """Norm of ``f`` in ``K[X]`` computed as a resultant over ``k``.
+
+    The norm is `\\text{Res}_t(p(t), f_t(X))` where `p` is the minimal
+    polynomial of the generator `a` of `K = k(a)` and `f_t` is `f` with `a`
+    replaced by the new variable `t`. Over `k = \\mathbb{Q}` this resultant is
+    computed with Collins's modular algorithm which returns exactly the same
+    polynomial as the subresultant PRS but avoids its coefficient growth.
+    """
+    g = dmp_raise(K.mod.to_list(), u + 1, 0, K.dom)
+    h, _ = dmp_inject(f, u, K, front=True)
+
+    if K.dom.is_QQ:
+        return dmp_qq_collins_resultant(g, h, u + 1, K.dom)
+    else:
+        return dmp_resultant(g, h, u + 1, K.dom) # type: ignore
+
+
 def dup_sqf_norm(f: dup[Alg], K: AlgebraicField) -> tuple[int, dup[Alg], dup[MPQ]]:
     r"""
     Find a shift of `f` in `K[x]` that has square-free norm.
@@ -179,13 +197,10 @@ def dup_sqf_norm(f: dup[Alg], K: AlgebraicField) -> tuple[int, dup[Alg], dup[MPQ
     if not K.is_Algebraic:
         raise DomainError("ground domain must be algebraic")
 
-    s, g = 0, dmp_raise(K.mod.to_list(), 1, 0, K.dom)
+    s = 0
 
     while True:
-        h, _ = dmp_inject(_dmp(f), 0, K, front=True)
-        r = dmp_resultant(g, h, 1, K.dom)
-
-        r2: dmp[MPQ] = r # type: ignore
+        r2 = _dmp_norm(_dmp(f), 0, K)
 
         if dup_sqf_p(r2, K.dom):
             break
@@ -310,14 +325,9 @@ def dmp_sqf_norm(
     if not K.is_Algebraic:
         raise DomainError("ground domain must be algebraic")
 
-    g = dmp_raise(K.mod.to_list(), u + 1, 0, K.dom)
-
     for ss, f in _dmp_sqf_norm_shifts(f, u, K):
 
-        h, _ = dmp_inject(f, u, K, front=True)
-        r = dmp_resultant(g, h, u + 1, K.dom)
-
-        r2: dmp[MPQ] = r # type: ignore
+        r2 = _dmp_norm(f, u, K)
 
         if dmp_sqf_p(r2, u, K.dom):
             break
@@ -402,10 +412,7 @@ def dmp_norm(f, u, K):
     if not K.is_Algebraic:
         raise DomainError("ground domain must be algebraic")
 
-    g = dmp_raise(K.mod.to_list(), u + 1, 0, K.dom)
-    h, _ = dmp_inject(f, u, K, front=True)
-
-    return dmp_resultant(g, h, u + 1, K.dom)
+    return _dmp_norm(f, u, K)
 
 
 def dup_gf_sqf_part(f, K):

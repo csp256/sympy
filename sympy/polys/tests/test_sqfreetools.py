@@ -159,3 +159,45 @@ def test_issue_26178():
     assert (x**2 - 2*y**2 + 1).sqf_list() == (MPQ(1,1), [(x**2 - 2*y**2 + 1, 1)])
     assert (x**2 - 2*z**2 + 1).sqf_list() == (MPQ(1,1), [(x**2 - 2*z**2 + 1, 1)])
     assert (y**2 - 2*z**2 + 1).sqf_list() == (MPQ(1,1), [(y**2 - 2*z**2 + 1, 1)])
+
+
+def test_dmp_norm_higher_degree():
+    from sympy.core.numbers import I
+    from sympy.functions.elementary.miscellaneous import cbrt, root, sqrt
+    from sympy.polys.densebasic import dmp_raise, dmp_inject
+    from sympy.polys.euclidtools import dmp_prs_resultant
+    from sympy.polys.sqfreetools import dmp_norm
+
+    K = QQ.algebraic_field(cbrt(2))
+    a = K.unit
+    _, X, Y = ring("x,y", QQ)
+
+    R, x, y = ring("x,y", K)
+    assert (x + y + a).norm() == (X + Y)**3 + 2
+    assert (x**2 + a*x*y + y).sqf_norm() == ([0, 0], x**2 + a*x*y + y,
+        X**6 + 3*X**4*Y + 2*X**3*Y**3 + 3*X**2*Y**2 + Y**3)
+
+    R, x = ring("x", K)
+    _, X = ring("x", QQ)
+    assert (x**3 - 2).sqf_norm() == ([2], x**3 - 6*a*x**2 + 12*a**2*x - 18,
+        X**9 - 54*X**6 + 108*X**3 - 5832)
+
+    # The norm is the resultant computed by the subresultant PRS, exactly.
+    exts = [(cbrt(2),), (sqrt(2) + sqrt(3),), (sqrt(2), sqrt(3)), (I, root(2, 4)),
+            (cbrt(2), I), (cbrt(2)/3 + QQ(1, 2),)]
+    for ext in exts:
+        K = QQ.algebraic_field(*ext)
+        a = K.unit
+        for gens in ["x", "x,y", "x,y,z"]:
+            R, *xs = ring(gens, K)
+            u = len(xs) - 1
+            s = sum(xs)
+            for f in [s + a, s**2 - a*xs[0] + QQ(1, 3), (a**2 - 1)*xs[-1]*s + 7*a,
+                      s**3 - a**2*xs[0]*xs[-1] + 2]:
+                # Keep the subresultant PRS reference fast
+                if (u + 1)*K.mod.degree()*f.degree() > 12:
+                    continue
+                g = dmp_raise(K.mod.to_list(), u + 1, 0, K.dom)
+                h, _ = dmp_inject(f.to_dense(), u, K, front=True)
+                r = dmp_prs_resultant(g, h, u + 1, K.dom)[0]
+                assert dmp_norm(f.to_dense(), u, K) == r
