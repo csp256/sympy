@@ -18,6 +18,7 @@ _default_config = {
     'EEZ_NUMBER_OF_CONFIGS':      3,
     'EEZ_NUMBER_OF_TRIES':        5,
     'EEZ_MODULUS_STEP':           2,
+    'EEZ_HENSEL_LIFTING':         'sparse',
 
     'GF_IRRED_METHOD':            'rabin',
     'GF_FACTOR_METHOD':           'zassenhaus',
@@ -64,6 +65,8 @@ def query(key: Literal['EEZ_NUMBER_OF_CONFIGS']) -> int | None: ...
 def query(key: Literal['EEZ_NUMBER_OF_TRIES']) -> int | None: ...
 @overload
 def query(key: Literal['EEZ_MODULUS_STEP']) -> int | None: ...
+@overload
+def query(key: Literal['EEZ_HENSEL_LIFTING']) -> str | None: ...
 @overload
 def query(key: Literal['GF_IRRED_METHOD']) -> str | None: ...
 @overload

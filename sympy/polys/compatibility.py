@@ -192,6 +192,7 @@ from sympy.polys.factortools import dmp_zz_wang_lead_coeffs
 from sympy.polys.factortools import dup_zz_diophantine
 from sympy.polys.factortools import dmp_zz_diophantine
 from sympy.polys.factortools import dmp_zz_wang_hensel_lifting
+from sympy.polys.sparsehensel import dmp_zz_sparse_hensel_lifting
 from sympy.polys.factortools import dmp_zz_wang
 from sympy.polys.factortools import dmp_zz_factor
 from sympy.polys.factortools import dup_qq_i_factor
@@ -1285,6 +1286,17 @@ class IPolys(Generic[Er]):
         LC = list(map(mv.to_dense, LC))
         result = dmp_zz_wang_hensel_lifting(
             self.to_dense(f), H, LC, A, p, self.ngens - 1, self.domain
+        )
+        return list(map(self.from_dense, result))
+
+    # f: Poly, H: List[Poly], LC: List[Poly], A: List[ZZ], p: ZZ
+    def dmp_zz_sparse_hensel_lifting(self, f, H, LC, A, p, seed=None):
+        uv = self[:1]
+        mv = self[1:]
+        H = list(map(uv.to_dense, H))
+        LC = list(map(mv.to_dense, LC))
+        result = dmp_zz_sparse_hensel_lifting(
+            self.to_dense(f), H, LC, A, p, self.ngens - 1, self.domain, seed=seed
         )
         return list(map(self.from_dense, result))
 

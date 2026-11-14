@@ -591,6 +591,7 @@ Polynomial factorization in characteristic zero:
 .. autofunction:: dup_zz_diophantine
 .. autofunction:: dmp_zz_diophantine
 .. autofunction:: dmp_zz_wang_hensel_lifting
+.. autofunction:: sympy.polys.sparsehensel.dmp_zz_sparse_hensel_lifting
 .. autofunction:: dmp_zz_wang
 .. autofunction:: dmp_zz_factor
 .. autofunction:: dup_qq_i_factor
