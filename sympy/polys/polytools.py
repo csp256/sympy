@@ -6726,11 +6726,11 @@ def _poly_sort_key(poly):
 def _sorted_factors(factors, method):
     """Sort a list of ``(expr, exp)`` pairs. """
     def exp_key(exp):
-        # integer exponents sort numerically; symbolic or non-integer ones
-        # sort after them without being compared as numbers
+        # numeric exponents sort numerically as before; symbolic ones sort
+        # after them without being compared as numbers
         exp = sympify(exp)
-        if exp.is_Integer:
-            return (0, int(exp))
+        if exp.is_Number:
+            return (0, exp)
         return (1, default_sort_key(exp))
 
     if method == 'sqf':

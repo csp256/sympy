@@ -2981,6 +2981,9 @@ def test_factor_large():
 
 
 def test_factor_list_symbolic_exponent():
+    # numeric (including rational) exponents keep their numeric order
+    assert factor_list(x**2*(x + 1)**Rational(1, 2)) == \
+        (1, [(x + 1, Rational(1, 2)), (x, 2)])
     # sorting factors must not compare symbolic exponents numerically
     r, u = symbols('r u')
     rr = symbols('rr', real=True)
