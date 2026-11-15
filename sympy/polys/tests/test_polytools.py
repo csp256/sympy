@@ -2980,6 +2980,27 @@ def test_factor_large():
             x**6 - x**5 + x**4 - x**3 + x**2 - x + 1, 1)])
 
 
+def test_factor_list_symbolic_exponent():
+    # numeric (including rational) exponents keep their numeric order
+    assert factor_list(x**2*(x + 1)**Rational(1, 2)) == \
+        (1, [(x + 1, Rational(1, 2)), (x, 2)])
+    # sorting factors must not compare symbolic exponents numerically
+    r, u = symbols('r u')
+    rr = symbols('rr', real=True)
+    assert factor_list(x*(x + 1)**r) == (1, [(x, 1), (x + 1, r)])
+    assert sqf_list(x*(x + 1)**r) == (1, [(x, 1), (x + 1, r)])
+    assert factor_list(x*(x + 1)**rr) == (1, [(x, 1), (x + 1, rr)])
+    assert sqf_list(x*(x + 1)**rr) == (1, [(x, 1), (x + 1, rr)])
+
+    e = x*(x + 1)**r*(x - 1)**2*(x + 2)**u*(x**2 + 1)**3*(x - 3)**(r + 1)
+    assert factor_list(e) == (1, [
+        (x, 1), (x - 1, 2), (x + 1, r), (x + 2, u), (x - 3, r + 1),
+        (x**2 + 1, 3)])
+    assert sqf_list(e) == (1, [
+        (x, 1), (x - 1, 2), (x**2 + 1, 3), (x + 1, r), (x + 2, u),
+        (x - 3, r + 1)])
+
+
 def test_factor_noeval():
     assert factor(6*x - 10) == Mul(2, 3*x - 5, evaluate=False)
     assert factor((6*x - 10)/(3*x - 6)) == Mul(Rational(2, 3), 3*x - 5, 1/(x - 2))

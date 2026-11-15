@@ -23,6 +23,7 @@ from sympy.core.numbers import I, Integer, equal_valued, NegativeInfinity
 from sympy.core.relational import Relational, Equality
 from sympy.core.symbol import Dummy, Symbol
 from sympy.core.sympify import sympify, _sympify
+from sympy.core.sorting import default_sort_key
 from sympy.core.traversal import preorder_traversal, bottom_up
 from sympy.logic.boolalg import BooleanAtom
 from sympy.polys import polyoptions as options
@@ -6724,16 +6725,24 @@ def _poly_sort_key(poly):
 
 def _sorted_factors(factors, method):
     """Sort a list of ``(expr, exp)`` pairs. """
+    def exp_key(exp):
+        # numeric exponents sort numerically as before; symbolic ones sort
+        # after them without being compared as numbers
+        exp = sympify(exp)
+        if exp.is_Number:
+            return (0, exp)
+        return (1, default_sort_key(exp))
+
     if method == 'sqf':
         def key(obj):
             poly, exp = obj
             rep = poly.rep.to_list()
-            return (exp, len(rep), len(poly.gens), str(poly.domain), rep)
+            return (exp_key(exp), len(rep), len(poly.gens), str(poly.domain), rep)
     else:
         def key(obj):
             poly, exp = obj
             rep = poly.rep.to_list()
-            return (len(rep), len(poly.gens), exp, str(poly.domain), rep)
+            return (len(rep), len(poly.gens), exp_key(exp), str(poly.domain), rep)
 
     return sorted(factors, key=key)
 
